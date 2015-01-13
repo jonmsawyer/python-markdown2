@@ -974,6 +974,9 @@ class Markdown(object):
         if "link-patterns" in self.extras:
             text = self._do_link_patterns(text)
 
+        if "pattern_replacements" in self.extras:
+            text = self._do_pattern_replacements(text)
+
         text = self._encode_amps_and_angles(text)
 
         text = self._do_italics_and_bold(text)
@@ -1997,6 +2000,38 @@ class Markdown(object):
                         .replace('*', self._escape_table['*'])
                         .replace('_', self._escape_table['_']))
                 link = '<a href="%s">%s</a>' % (escaped_href, text[start:end])
+                hash = _hash_text(link)
+                link_from_hash[hash] = link
+                text = text[:start] + hash + text[end:]
+        for hash, link in list(link_from_hash.items()):
+            text = text.replace(hash, link)
+        return text
+
+    def _do_pattern_replacements(self, text):
+        """Caveat emptor: there isn't much guarding against link
+        patterns being formed inside other standard Markdown links, e.g.
+        inside a [link def][like this].
+
+        Dev Notes: *Could* consider prefixing regexes with a negative
+        lookbehind assertion to attempt to guard against this.
+        """
+        link_from_hash = {}
+        for regex, repl in self.extras.get('pattern_replacements', (None, None)):
+            replacements = []
+            for match in regex.finditer(text):
+                if hasattr(repl, "__call__"):
+                    href = repl(match)
+                else:
+                    href = match.expand(repl)
+                replacements.append((match.span(), href))
+            for (start, end), href in reversed(replacements):
+                escaped_href = (
+                    href.replace('"', '&quot;')  # b/c of attr quote
+                        # To avoid markdown <em> and <strong>:
+                        .replace('*', self._escape_table['*'])
+                        .replace('_', self._escape_table['_']))
+                #link = '<a href="%s">%s</a>' % (escaped_href, text[start:end])
+                link = '%s' % (href,)
                 hash = _hash_text(link)
                 link_from_hash[hash] = link
                 text = text[:start] + hash + text[end:]
